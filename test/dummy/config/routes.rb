@@ -1,3 +1,4 @@
 Dummy::Application.routes.draw do
-  resources :widgets
+  resources :articles, :only => [:create]
+  resources :widgets, :only => [:create, :update, :destroy]
 end

@@ -7,8 +7,10 @@ class ControllerTest < ActionController::TestCase
     @request.env['REMOTE_ADDR'] = '127.0.0.1'
   end
 
+  # Mimick what RequestStore will do outside of the test env, since it is
+  # middleware, and doesn't get executed in controller / request specs
   teardown do
-    PaperTrail.enabled_for_controller = true
+    RequestStore.store[:paper_trail] = nil
   end
 
   test 'disable on create' do
@@ -34,7 +36,7 @@ class ControllerTest < ActionController::TestCase
     assert_equal 0, w.versions.length
     delete :destroy, :id => w.id
     widget = assigns(:widget)
-    assert_equal 0, Version.with_item_keys('Widget', w.id).size
+    assert_equal 0, PaperTrail::Version.with_item_keys('Widget', w.id).size
   end
 
   test 'create' do
@@ -62,10 +64,28 @@ class ControllerTest < ActionController::TestCase
     assert_equal 1, w.versions.length
     delete :destroy, :id => w.id
     widget = assigns(:widget)
-    versions_for_widget = Version.with_item_keys('Widget', w.id)
-    assert_equal 2,               versions_for_widget.length
-    assert_equal 153,             versions_for_widget.last.whodunnit.to_i
-    assert_equal '127.0.0.1',     versions_for_widget.last.ip
-    assert_equal 'Rails Testing', versions_for_widget.last.user_agent
+    assert_equal 2,               widget.versions.length
+    assert_equal '127.0.0.1',     widget.versions.last.ip
+    assert_equal 'Rails Testing', widget.versions.last.user_agent
+    assert_equal 153,             widget.versions.last.whodunnit.to_i
+  end
+
+  test "controller metadata methods should get evaluated if paper trail is enabled for controller" do
+    @request.env['HTTP_USER_AGENT'] = 'User-Agent'
+    post :create, :widget => { :name => 'Flugel' }
+    assert PaperTrail.enabled_for_controller?
+    assert_equal 153, PaperTrail.whodunnit
+    assert PaperTrail.controller_info.present?
+    assert PaperTrail.controller_info.keys.include?(:ip)
+    assert PaperTrail.controller_info.keys.include?(:user_agent)
+  end
+
+  test "controller metadata methods should not get evaluated if paper trail is disabled for controller" do
+    @request.env['HTTP_USER_AGENT'] = 'Disable User-Agent'
+    post :create, :widget => { :name => 'Flugel' }
+    assert_equal 0, assigns(:widget).versions.length
+    assert !PaperTrail.enabled_for_controller?
+    assert PaperTrail.whodunnit.nil?
+    assert PaperTrail.controller_info.nil?
   end
 end
